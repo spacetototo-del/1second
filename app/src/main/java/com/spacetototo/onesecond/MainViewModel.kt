@@ -95,12 +95,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- 2. 포인트 ----------
     fun pointsOf(videoId: Long): List<Long> = points[videoId].orEmpty()
 
-    /** 추가했으면 true, 이미 1초 안쪽에 다른 포인트가 있어 겹치면 overlapped=true 로 알려준다. */
-    fun addPoint(videoId: Long, ms: Long): Boolean {
+    enum class AddResult { ADDED, OVERLAPPED, DUPLICATE }
+
+    /** 같은 지점이면 추가하지 않고, 1초 안쪽으로 겹치면 추가하되 알려준다. */
+    fun addPoint(videoId: Long, ms: Long): AddResult {
         val list = pointsOf(videoId)
+        if (list.any { kotlin.math.abs(it - ms) < 50 }) return AddResult.DUPLICATE
         val overlapped = list.any { kotlin.math.abs(it - ms) < CLIP_MS }
         points = points + (videoId to (list + ms).sorted())
-        return overlapped
+        return if (overlapped) AddResult.OVERLAPPED else AddResult.ADDED
     }
 
     fun removePoint(videoId: Long, ms: Long) {
@@ -143,8 +146,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         stage = Stage.EXPORT
     }
 
-    fun startExport() {
-        if (clips.isEmpty() || exportState is ExportState.Running) return
+    /**
+     * attempt 0: HDR→SDR(OpenGL) + 9:16 꽉채우기
+     * attempt 1: HDR를 SDR로 간주 + 9:16 꽉채우기
+     * attempt 2: 효과 없이 원본 크기 그대로 이어붙이기 (최후의 수단)
+     */
+    fun startExport(attempt: Int = 0) {
+        if (clips.isEmpty()) return
+        if (attempt == 0 && exportState is ExportState.Running) return
         val ctx = getApplication<Application>()
         val outFile = File(ctx.cacheDir, "export_${System.currentTimeMillis()}.mp4")
         exportState = ExportState.Running(0f)
@@ -162,11 +171,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val fit = Presentation.createForWidthAndHeight(
                 OUT_WIDTH, OUT_HEIGHT, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
             )
-            EditedMediaItem.Builder(mediaItem)
-                .setEffects(Effects(emptyList(), listOf(fit)))
-                .build()
+            val builder = EditedMediaItem.Builder(mediaItem)
+            if (attempt < 2) builder.setEffects(Effects(emptyList(), listOf(fit)))
+            builder.build()
         }
-        val composition = Composition.Builder(listOf(EditedMediaItemSequence(items))).build()
+        val hdrMode = when (attempt) {
+            0 -> Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL
+            1 -> Composition.HDR_MODE_EXPERIMENTAL_FORCE_INTERPRET_HDR_AS_SDR
+            else -> Composition.HDR_MODE_EXPERIMENTAL_FORCE_INTERPRET_HDR_AS_SDR
+        }
+        val composition = Composition.Builder(listOf(EditedMediaItemSequence(items)))
+            .setHdrMode(hdrMode)
+            .build()
 
         val t = Transformer.Builder(ctx)
             .addListener(object : Transformer.Listener {
@@ -191,9 +207,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 ) {
                     polling = false
                     outFile.delete()
-                    exportState = ExportState.Error(
-                        "내보내기 실패: ${exportException.errorCodeName} (${exportException.message})"
-                    )
+                    if (attempt < 2) {
+                        // 다른 방식으로 자동 재시도
+                        startExport(attempt + 1)
+                    } else {
+                        val cause = generateSequence<Throwable>(exportException) { it.cause }
+                            .joinToString(" ← ") { "${it.javaClass.simpleName}: ${it.message}" }
+                        exportState = ExportState.Error(
+                            "내보내기 실패 [${exportException.errorCodeName}]\n$cause"
+                        )
+                    }
                 }
             })
             .build()

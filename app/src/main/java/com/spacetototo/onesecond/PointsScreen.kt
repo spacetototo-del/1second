@@ -161,8 +161,13 @@ fun PointsScreen(vm: MainViewModel) {
         Button(
             onClick = {
                 player.pause()
-                val overlapped = vm.addPoint(video.id, pos)
-                if (overlapped) Toast.makeText(ctx, "다른 포인트와 1초 안쪽으로 겹쳐요", Toast.LENGTH_SHORT).show()
+                when (vm.addPoint(video.id, pos)) {
+                    MainViewModel.AddResult.DUPLICATE ->
+                        Toast.makeText(ctx, "이미 같은 지점에 포인트가 있어요", Toast.LENGTH_SHORT).show()
+                    MainViewModel.AddResult.OVERLAPPED ->
+                        Toast.makeText(ctx, "다른 포인트와 1초 안쪽으로 겹쳐요", Toast.LENGTH_SHORT).show()
+                    MainViewModel.AddResult.ADDED -> Unit
+                }
             },
             modifier = Modifier.fillMaxWidth(),
         ) { Text("★ 이 지점을 포인트로 추가 (${formatTime(pos)})") }
