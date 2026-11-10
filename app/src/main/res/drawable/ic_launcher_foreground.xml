@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 굵은 숫자 1 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M43,43 L56,33 L64,33 L64,69 L54,69 L54,45.5 L43,52 Z" />
+    <!-- 트리밍 괄호 [ ] : 1초 구간을 잘라낸다는 의미 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M38,34 L32,34 L32,68 L38,68" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M70,34 L76,34 L76,68 L70,68" />
+    <!-- 아래 타임라인 점 -->
+    <path
+        android:fillColor="#CCFFFFFF"
+        android:pathData="M54,77 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0" />
+</vector>

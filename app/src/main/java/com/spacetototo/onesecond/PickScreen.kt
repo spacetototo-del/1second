@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -22,11 +23,6 @@ import androidx.compose.ui.unit.dp
 fun PickScreen(vm: MainViewModel) {
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(50)
-    ) { uris -> if (uris.isNotEmpty()) vm.loadVideos(uris) }
-
-    // 기본 선택 창: 삼성 갤러리, 파일, 구글 포토 등 설치된 앱 중에서 고를 수 있다
-    val galleryLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetMultipleContents()
     ) { uris -> if (uris.isNotEmpty()) vm.loadVideos(uris) }
 
     // 파일 앱(내 파일/기기 저장소)에서 직접 고르는 방식
@@ -50,19 +46,11 @@ fun PickScreen(vm: MainViewModel) {
             Text("영상 정보를 읽는 중…")
         } else {
             Button(onClick = {
-                galleryLauncher.launch("video/*")
-            }) { Text("갤러리에서 선택") }
-            OutlinedButton(onClick = {
-                fileLauncher.launch(arrayOf("video/*"))
-            }) { Text("파일에서 선택 (내 폰 저장소)") }
-            OutlinedButton(onClick = {
                 launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-            }) { Text("구글 포토 / 사진 선택기") }
-            Text(
-                "'갤러리에서 선택'을 누르면 앱 선택 창이 떠요.\n삼성 갤러리(또는 갤러리)를 고르세요.",
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.bodySmall,
-            )
+            }, modifier = Modifier.fillMaxWidth()) { Text("구글 포토에서 선택") }
+            Button(onClick = {
+                fileLauncher.launch(arrayOf("video/*"))
+            }, modifier = Modifier.fillMaxWidth()) { Text("내 폰 저장소에서 선택") }
         }
     }
 }
