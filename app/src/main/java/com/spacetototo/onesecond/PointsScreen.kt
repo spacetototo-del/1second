@@ -17,8 +17,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -73,6 +73,8 @@ fun PointsScreen(vm: MainViewModel) {
     var pos by remember(video.id) { mutableLongStateOf(0L) }
     var scrubbing by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
+    // 위치를 옮길 포인트 (칩을 탭하면 선택된다)
+    var selected by remember(video.id) { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(video.id) {
         while (true) {
@@ -175,22 +177,49 @@ fun PointsScreen(vm: MainViewModel) {
         if (videoPoints.isEmpty()) {
             Text("아직 포인트가 없어요. 영상을 움직여서 원하는 지점에 추가하세요.", style = MaterialTheme.typography.bodySmall)
         } else {
+            Text("포인트를 탭하면 그 위치로 이동하고, 영상을 움직인 뒤 '옮기기'로 위치를 수정할 수 있어요.", style = MaterialTheme.typography.bodySmall)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(videoPoints, key = { it }) { p ->
-                    AssistChip(
+                    FilterChip(
+                        selected = p == selected,
                         onClick = {
                             player.pause()
                             player.seekTo(p)
                             pos = p
+                            selected = p
                         },
                         label = { Text(formatTime(p)) },
                         trailingIcon = {
-                            IconButton(onClick = { vm.removePoint(video.id, p) }, modifier = Modifier.height(20.dp)) {
+                            IconButton(
+                                onClick = {
+                                    vm.removePoint(video.id, p)
+                                    if (selected == p) selected = null
+                                },
+                                modifier = Modifier.height(20.dp),
+                            ) {
                                 Icon(Icons.Filled.Close, contentDescription = "삭제")
                             }
                         },
                     )
                 }
+            }
+            val sel = selected
+            if (sel != null && sel in videoPoints) {
+                OutlinedButton(
+                    onClick = {
+                        player.pause()
+                        when (vm.movePoint(video.id, sel, pos)) {
+                            MainViewModel.AddResult.DUPLICATE ->
+                                Toast.makeText(ctx, "그 위치에는 이미 포인트가 있어요", Toast.LENGTH_SHORT).show()
+                            MainViewModel.AddResult.OVERLAPPED -> {
+                                selected = pos
+                                Toast.makeText(ctx, "다른 포인트와 1초 안쪽으로 겹쳐요", Toast.LENGTH_SHORT).show()
+                            }
+                            MainViewModel.AddResult.ADDED -> selected = pos
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("선택한 포인트(${formatTime(sel)})를 현재 위치(${formatTime(pos)})로 옮기기") }
             }
         }
 

@@ -1,9 +1,15 @@
 package com.spacetototo.onesecond
 
+import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,6 +35,21 @@ fun ExportScreen(vm: MainViewModel) {
     val state = vm.exportState
     val view = LocalView.current
     val running = state is ExportState.Running
+
+    // Android 13+ 에서는 진행 알림을 보이려면 알림 권한이 필요하다 (거부해도 내보내기는 진행됨)
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        vm.startExport()
+    }
+    fun begin() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            vm.startExport()
+        }
+    }
+
     DisposableEffect(running) {
         view.keepScreenOn = running
         onDispose { view.keepScreenOn = false }
@@ -47,7 +68,7 @@ fun ExportScreen(vm: MainViewModel) {
                         "${MainViewModel.OUT_WIDTH}×${MainViewModel.OUT_HEIGHT} (9:16 릴스) · 원본 소리 유지",
                     textAlign = TextAlign.Center,
                 )
-                Button(onClick = { vm.startExport() }, modifier = Modifier.fillMaxWidth()) { Text("영상 만들기") }
+                Button(onClick = { begin() }, modifier = Modifier.fillMaxWidth()) { Text("영상 만들기") }
                 OutlinedButton(onClick = { vm.back() }, modifier = Modifier.fillMaxWidth()) { Text("‹ 순서로 돌아가기") }
             }
 
@@ -55,7 +76,7 @@ fun ExportScreen(vm: MainViewModel) {
                 Text(if (state.saving) "갤러리에 저장하는 중…" else "영상을 만드는 중…", style = MaterialTheme.typography.titleLarge)
                 LinearProgressIndicator(progress = { state.progress }, modifier = Modifier.fillMaxWidth())
                 Text("${(state.progress * 100).toInt()}%")
-                Text("화면을 켜둔 채로 기다려주세요.", style = MaterialTheme.typography.bodySmall)
+                Text("다른 앱으로 이동해도 계속 진행돼요. 알림에서 진행 상황을 볼 수 있어요.", style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
                 OutlinedButton(onClick = { vm.cancelExport() }) { Text("취소") }
             }
 
@@ -75,7 +96,7 @@ fun ExportScreen(vm: MainViewModel) {
             is ExportState.Error -> {
                 Text("문제가 생겼어요", style = MaterialTheme.typography.headlineMedium)
                 Text(state.message, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall)
-                Button(onClick = { vm.startExport() }, modifier = Modifier.fillMaxWidth()) { Text("다시 시도") }
+                Button(onClick = { begin() }, modifier = Modifier.fillMaxWidth()) { Text("다시 시도") }
                 OutlinedButton(onClick = { vm.back() }, modifier = Modifier.fillMaxWidth()) { Text("‹ 순서로 돌아가기") }
             }
         }

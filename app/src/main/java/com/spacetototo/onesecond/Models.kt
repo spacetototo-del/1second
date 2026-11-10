@@ -4,7 +4,7 @@ import android.net.Uri
 
 const val CLIP_MS = 1000L
 
-data class VideoItem(val id: Long, val uri: Uri, val durationMs: Long)
+data class VideoItem(val id: Long, val uri: Uri, val durationMs: Long, val hasAudio: Boolean = true)
 
 data class Clip(
     val id: Long,

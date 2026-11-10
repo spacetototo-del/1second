@@ -11,3 +11,9 @@
 *.apk
 *.aab
 .claude/
+
+# 서명 키는 절대 커밋하지 않는다
+*.keystore
+*.jks
+/keystore.properties
+/keystore.b64.txt

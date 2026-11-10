@@ -65,8 +65,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             loading = true
             val items = withContext(Dispatchers.IO) {
                 uris.mapNotNull { uri ->
-                    val d = readDuration(uri)
-                    if (d > 0) VideoItem(nextId++, uri, d) else null
+                    val (d, audio) = readInfo(uri)
+                    if (d > 0) VideoItem(nextId++, uri, d, audio) else null
                 }
             }
             loading = false
@@ -80,13 +80,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun readDuration(uri: Uri): Long {
+    /** (길이 ms, 소리 트랙 유무) */
+    private fun readInfo(uri: Uri): Pair<Long, Boolean> {
         val r = MediaMetadataRetriever()
         return try {
             r.setDataSource(getApplication(), uri)
-            r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val d = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val audio = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes"
+            d to audio
         } catch (e: Exception) {
-            0L
+            0L to true
         } finally {
             r.release()
         }
@@ -108,6 +111,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removePoint(videoId: Long, ms: Long) {
         points = points + (videoId to pointsOf(videoId).filter { it != ms })
+    }
+
+    /** 이미 찍은 포인트를 새 위치로 옮긴다. 순서 화면의 클립 위치는 그대로 유지한다. */
+    fun movePoint(videoId: Long, oldMs: Long, newMs: Long): AddResult {
+        val video = videos.firstOrNull { it.id == videoId } ?: return AddResult.DUPLICATE
+        val others = pointsOf(videoId).filter { it != oldMs }
+        if (others.any { kotlin.math.abs(it - newMs) < 50 }) return AddResult.DUPLICATE
+        val overlapped = others.any { kotlin.math.abs(it - newMs) < CLIP_MS }
+        points = points + (videoId to (others + newMs).sorted())
+        val r = clipRange(newMs, video.durationMs)
+        clips = clips.map {
+            if (it.uri == video.uri && it.pointMs == oldMs) Clip(it.id, it.uri, newMs, r.first, r.second) else it
+        }
+        return if (overlapped) AddResult.OVERLAPPED else AddResult.ADDED
     }
 
     val totalPoints: Int get() = points.values.sumOf { it.size }
@@ -157,6 +174,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         val outFile = File(ctx.cacheDir, "export_${System.currentTimeMillis()}.mp4")
         exportState = ExportState.Running(0f)
+        // 백그라운드로 가도 프로세스가 죽지 않도록 포그라운드 서비스를 켠다 (재시도 때는 이미 켜져 있음)
+        if (attempt == 0) ExportService.start(ctx)
 
         val items = clips.map { c ->
             val mediaItem = MediaItem.Builder()
@@ -180,8 +199,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             1 -> Composition.HDR_MODE_EXPERIMENTAL_FORCE_INTERPRET_HDR_AS_SDR
             else -> Composition.HDR_MODE_EXPERIMENTAL_FORCE_INTERPRET_HDR_AS_SDR
         }
-        val composition = Composition.Builder(listOf(EditedMediaItemSequence(items)))
+        // 소리 없는 영상이 섞여 있어도 무음 트랙을 채워 넣어 끝까지 이어 붙인다
+        val anyAudio = videos.any { it.hasAudio }
+        val sequenceBuilder = EditedMediaItemSequence.Builder()
+        items.forEach { sequenceBuilder.addItem(it) }
+        val sequence = sequenceBuilder.build()
+        val composition = Composition.Builder(listOf(sequence))
             .setHdrMode(hdrMode)
+            .experimentalSetForceAudioTrack(anyAudio)
             .build()
 
         val t = Transformer.Builder(ctx)
@@ -192,8 +217,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         try {
                             val uri = saveToGallery(outFile)
                             exportState = ExportState.Done(uri)
+                            ExportService.stop(ctx)
+                            ExportService.notifyDone(ctx, success = true)
                         } catch (e: Exception) {
                             exportState = ExportState.Error("저장 실패: ${e.message}")
+                            ExportService.stop(ctx)
+                            ExportService.notifyDone(ctx, success = false)
                         } finally {
                             polling = false
                         }
@@ -216,6 +245,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         exportState = ExportState.Error(
                             "내보내기 실패 [${exportException.errorCodeName}]\n$cause"
                         )
+                        ExportService.stop(ctx)
+                        ExportService.notifyDone(ctx, success = false)
                     }
                 }
             })
@@ -232,6 +263,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     t.getProgress(holder) != Transformer.PROGRESS_STATE_NOT_STARTED
                 ) {
                     exportState = ExportState.Running(holder.progress / 100f)
+                    ExportService.updateProgress(ctx, holder.progress)
                 }
                 delay(300)
             }
@@ -263,6 +295,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         transformer?.cancel()
         transformer = null
         exportState = ExportState.Idle
+        ExportService.stop(getApplication())
     }
 
     // ---------- 공통 ----------
@@ -290,6 +323,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         polling = false
         transformer?.cancel()
+        ExportService.stop(getApplication())
         super.onCleared()
     }
 
