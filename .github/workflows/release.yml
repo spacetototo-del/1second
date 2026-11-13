@@ -21,22 +21,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Restore signing key
-        env:
-          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
-        run: |
-          if [ -z "$KEYSTORE_B64" ]; then
-            echo "::error::KEYSTORE_B64 secret is not set. Add the signing key in Settings > Secrets and variables > Actions."
-            exit 1
-          fi
-          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/onesecond.keystore"
-          echo "KEYSTORE_PATH=$RUNNER_TEMP/onesecond.keystore" >> "$GITHUB_ENV"
-
       - name: Build debug APK
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: onesecond
-          KEY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Rename APK
