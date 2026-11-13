@@ -64,7 +64,7 @@ fun ExportScreen(vm: MainViewModel) {
             ExportState.Idle -> {
                 Text("내보내기", style = MaterialTheme.typography.headlineMedium)
                 Text(
-                    "클립 ${vm.clips.size}개 · 약 ${vm.clips.size}초\n" +
+                    "클립 ${vm.clips.size}개 · 총 ${formatSeconds(vm.totalMs)}초\n" +
                         "${MainViewModel.OUT_WIDTH}×${MainViewModel.OUT_HEIGHT} (9:16 릴스) · 원본 소리 유지",
                     textAlign = TextAlign.Center,
                 )

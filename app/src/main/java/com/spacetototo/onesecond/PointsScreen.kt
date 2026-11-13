@@ -160,6 +160,20 @@ fun PointsScreen(vm: MainViewModel) {
             OutlinedButton(onClick = { seekBy(1000) }) { Text("+1초") }
         }
 
+        Column {
+            Text("클립 길이", style = MaterialTheme.typography.labelLarge)
+            LengthSelector(
+                selectedMs = vm.clipLenMs,
+                onSelect = { vm.setClipLength(it) },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            )
+            Text(
+                "포인트 앞뒤 ${formatSeconds(vm.clipLenMs / 2)}초씩, 총 ${formatSeconds(vm.clipLenMs)}초를 잘라요",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+
         Button(
             onClick = {
                 player.pause()

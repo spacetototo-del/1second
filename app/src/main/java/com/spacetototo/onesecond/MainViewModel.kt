@@ -10,6 +10,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -53,6 +54,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var clips by mutableStateOf<List<Clip>>(emptyList())
         private set
     var exportState by mutableStateOf<ExportState>(ExportState.Idle)
+        private set
+
+    private val prefs = app.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+
+    /** 기본 클립 길이 (기본값 1초, 마지막으로 고른 값을 기억한다) */
+    var clipLenMs by mutableLongStateOf(
+        prefs.getLong("clipLen", DEFAULT_CLIP_MS).takeIf { it in CLIP_LENGTHS } ?: DEFAULT_CLIP_MS
+    )
         private set
 
     private var nextId = 1L
@@ -104,7 +113,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun addPoint(videoId: Long, ms: Long): AddResult {
         val list = pointsOf(videoId)
         if (list.any { kotlin.math.abs(it - ms) < 50 }) return AddResult.DUPLICATE
-        val overlapped = list.any { kotlin.math.abs(it - ms) < CLIP_MS }
+        val overlapped = list.any { kotlin.math.abs(it - ms) < clipLenMs }
         points = points + (videoId to (list + ms).sorted())
         return if (overlapped) AddResult.OVERLAPPED else AddResult.ADDED
     }
@@ -118,11 +127,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val video = videos.firstOrNull { it.id == videoId } ?: return AddResult.DUPLICATE
         val others = pointsOf(videoId).filter { it != oldMs }
         if (others.any { kotlin.math.abs(it - newMs) < 50 }) return AddResult.DUPLICATE
-        val overlapped = others.any { kotlin.math.abs(it - newMs) < CLIP_MS }
+        val overlapped = others.any { kotlin.math.abs(it - newMs) < clipLenMs }
         points = points + (videoId to (others + newMs).sorted())
-        val r = clipRange(newMs, video.durationMs)
         clips = clips.map {
-            if (it.uri == video.uri && it.pointMs == oldMs) Clip(it.id, it.uri, newMs, r.first, r.second) else it
+            if (it.uri == video.uri && it.pointMs == oldMs) {
+                val r = clipRange(newMs, video.durationMs, it.lengthMs)
+                it.copy(pointMs = newMs, startMs = r.first, endMs = r.second)
+            } else it
         }
         return if (overlapped) AddResult.OVERLAPPED else AddResult.ADDED
     }
@@ -132,14 +143,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun goToOrder() {
         // 기존 순서는 유지하고, 사라진 포인트의 클립은 빼고, 새 포인트는 뒤에 붙인다.
         val wanted = mutableListOf<Triple<VideoItem, Long, Pair<Long, Long>>>()
-        for (v in videos) for (p in pointsOf(v.id)) wanted += Triple(v, p, clipRange(p, v.durationMs))
+        for (v in videos) for (p in pointsOf(v.id)) wanted += Triple(v, p, clipRange(p, v.durationMs, clipLenMs))
         val existing = clips.filter { c -> wanted.any { it.first.uri == c.uri && it.second == c.pointMs } }
         val added = wanted
             .filter { w -> existing.none { it.uri == w.first.uri && it.pointMs == w.second } }
-            .map { (v, p, r) -> Clip(nextId++, v.uri, p, r.first, r.second) }
+            .map { (v, p, r) -> Clip(nextId++, v.uri, p, r.first, r.second, lengthMs = clipLenMs) }
         clips = existing + added
         stage = Stage.ORDER
     }
+
+    // ---------- 클립 길이 ----------
+    /** 기본 클립 길이를 바꾸면, 클립별로 따로 지정하지 않은 클립에 바로 적용된다. */
+    fun setClipLength(ms: Long) {
+        if (ms == clipLenMs) return
+        clipLenMs = ms
+        prefs.edit().putLong("clipLen", ms).apply()
+        clips = clips.map { if (it.custom) it else withLength(it, ms, custom = false) }
+    }
+
+    /** 클립 하나만 길이를 바꾼다. 기본 길이와 같게 되돌리면 다시 기본값을 따라간다. */
+    fun setClipLengthFor(id: Long, ms: Long) {
+        clips = clips.map { if (it.id == id) withLength(it, ms, custom = ms != clipLenMs) else it }
+    }
+
+    private fun withLength(c: Clip, ms: Long, custom: Boolean): Clip {
+        val dur = videos.firstOrNull { it.uri == c.uri }?.durationMs ?: return c.copy(lengthMs = ms, custom = custom)
+        val r = clipRange(c.pointMs, dur, ms)
+        return c.copy(startMs = r.first, endMs = r.second, lengthMs = ms, custom = custom)
+    }
+
+    val totalMs: Long get() = clips.sumOf { it.endMs - it.startMs }
 
     // ---------- 3. 순서 ----------
     fun moveClip(from: Int, to: Int) {

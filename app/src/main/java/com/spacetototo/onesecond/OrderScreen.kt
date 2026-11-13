@@ -89,13 +89,13 @@ fun OrderScreen(vm: MainViewModel) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { vm.back() }) { Text("‹ 포인트 수정") }
             Text(
-                "클립 ${clips.size}개 · 총 ${clips.size}초",
+                "클립 ${clips.size}개 · 총 ${formatSeconds(vm.totalMs)}초",
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f),
             )
         }
         Text(
-            "오른쪽 ≡ 를 길게 잡고 위아래로 끌어 순서를 바꾸세요. 썸네일을 누르면 1초 미리보기가 나와요.",
+            "오른쪽 ≡ 를 잡고 위아래로 끌어 순서를 바꾸세요. 썸네일을 누르면 미리보기가 나오고, 클립마다 길이를 따로 고를 수 있어요.",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(bottom = 8.dp),
         )
@@ -122,7 +122,16 @@ fun OrderScreen(vm: MainViewModel) {
                         Thumb(clip.uri, clip.startMs, Modifier.size(width = 56.dp, height = 100.dp).clickable { preview = clip })
                         Column(Modifier.weight(1f)) {
                             Text("${formatTime(clip.startMs)} ~ ${formatTime(clip.endMs)}")
-                            Text("포인트 ${formatTime(clip.pointMs)}", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                "포인트 ${formatTime(clip.pointMs)}" + if (clip.custom) " · 직접 지정" else "",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            LengthSelector(
+                                selectedMs = clip.lengthMs,
+                                onSelect = { vm.setClipLengthFor(clip.id, it) },
+                                compact = true,
+                                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                            )
                         }
                         IconButton(onClick = { vm.removeClip(clip.id) }) {
                             Icon(Icons.Filled.Delete, contentDescription = "클립 삭제")
@@ -155,7 +164,7 @@ fun OrderScreen(vm: MainViewModel) {
             onClick = { vm.goToExport() },
             enabled = clips.isNotEmpty(),
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        ) { Text("내보내기 (${clips.size}초)") }
+        ) { Text("내보내기 (${formatSeconds(vm.totalMs)}초)") }
     }
 
     preview?.let { clip -> ClipPreviewDialog(clip) { preview = null } }
