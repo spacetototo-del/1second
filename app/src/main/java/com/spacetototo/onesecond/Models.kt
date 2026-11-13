@@ -9,10 +9,7 @@ const val DEFAULT_CLIP_MS = 1000L
 
 data class VideoItem(val id: Long, val uri: Uri, val durationMs: Long, val hasAudio: Boolean = true)
 
-/**
- * @param lengthMs 이 클립의 길이
- * @param custom 클립별로 직접 지정했으면 true (기본 길이를 바꿔도 따라가지 않는다)
- */
+/** @param lengthMs 이 클립의 길이 (포인트를 찍을 때 정해지고, 순서 화면에서 클립별로 바꿀 수 있다) */
 data class Clip(
     val id: Long,
     val uri: Uri,
@@ -20,7 +17,6 @@ data class Clip(
     val startMs: Long,
     val endMs: Long,
     val lengthMs: Long = DEFAULT_CLIP_MS,
-    val custom: Boolean = false,
 )
 
 /** 포인트 앞뒤로 길이의 절반씩. 영상 처음/끝에 가까우면 안쪽으로 밀어서 길이를 유지한다. */

@@ -82,6 +82,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (items.isEmpty()) return@launch
             videos = items
             points = emptyMap()
+            pointLengths = emptyMap()
             clips = emptyList()
             currentVideoIndex = 0
             exportState = ExportState.Idle
@@ -109,17 +110,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     enum class AddResult { ADDED, OVERLAPPED, DUPLICATE }
 
-    /** 같은 지점이면 추가하지 않고, 1초 안쪽으로 겹치면 추가하되 알려준다. */
+    /** 포인트마다 찍은 시점의 클립 길이를 기억한다 (key = 영상 id to 포인트 ms) */
+    private var pointLengths by mutableStateOf<Map<Pair<Long, Long>, Long>>(emptyMap())
+
+    fun lengthOfPoint(videoId: Long, ms: Long): Long = pointLengths[videoId to ms] ?: clipLenMs
+
+    /** 같은 지점이면 추가하지 않고, 클립 길이 안쪽으로 겹치면 추가하되 알려준다. */
     fun addPoint(videoId: Long, ms: Long): AddResult {
         val list = pointsOf(videoId)
         if (list.any { kotlin.math.abs(it - ms) < 50 }) return AddResult.DUPLICATE
         val overlapped = list.any { kotlin.math.abs(it - ms) < clipLenMs }
         points = points + (videoId to (list + ms).sorted())
+        pointLengths = pointLengths + ((videoId to ms) to clipLenMs)
         return if (overlapped) AddResult.OVERLAPPED else AddResult.ADDED
     }
 
     fun removePoint(videoId: Long, ms: Long) {
         points = points + (videoId to pointsOf(videoId).filter { it != ms })
+        pointLengths = pointLengths - (videoId to ms)
     }
 
     /** 이미 찍은 포인트를 새 위치로 옮긴다. 순서 화면의 클립 위치는 그대로 유지한다. */
@@ -128,7 +136,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val others = pointsOf(videoId).filter { it != oldMs }
         if (others.any { kotlin.math.abs(it - newMs) < 50 }) return AddResult.DUPLICATE
         val overlapped = others.any { kotlin.math.abs(it - newMs) < clipLenMs }
+        val keptLength = lengthOfPoint(videoId, oldMs)
         points = points + (videoId to (others + newMs).sorted())
+        pointLengths = pointLengths - (videoId to oldMs) + ((videoId to newMs) to keptLength)
         clips = clips.map {
             if (it.uri == video.uri && it.pointMs == oldMs) {
                 val r = clipRange(newMs, video.durationMs, it.lengthMs)
@@ -142,34 +152,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun goToOrder() {
         // 기존 순서는 유지하고, 사라진 포인트의 클립은 빼고, 새 포인트는 뒤에 붙인다.
-        val wanted = mutableListOf<Triple<VideoItem, Long, Pair<Long, Long>>>()
-        for (v in videos) for (p in pointsOf(v.id)) wanted += Triple(v, p, clipRange(p, v.durationMs, clipLenMs))
+        val wanted = mutableListOf<Triple<VideoItem, Long, Long>>() // 영상, 포인트, 그 포인트의 길이
+        for (v in videos) for (p in pointsOf(v.id)) wanted += Triple(v, p, lengthOfPoint(v.id, p))
         val existing = clips.filter { c -> wanted.any { it.first.uri == c.uri && it.second == c.pointMs } }
         val added = wanted
             .filter { w -> existing.none { it.uri == w.first.uri && it.pointMs == w.second } }
-            .map { (v, p, r) -> Clip(nextId++, v.uri, p, r.first, r.second, lengthMs = clipLenMs) }
+            .map { (v, p, len) ->
+                val r = clipRange(p, v.durationMs, len)
+                Clip(nextId++, v.uri, p, r.first, r.second, lengthMs = len)
+            }
         clips = existing + added
         stage = Stage.ORDER
     }
 
     // ---------- 클립 길이 ----------
-    /** 기본 클립 길이를 바꾸면, 클립별로 따로 지정하지 않은 클립에 바로 적용된다. */
+    /** 앞으로 새로 찍는 포인트의 기본 길이. 이미 찍은 포인트는 바뀌지 않는다. */
     fun setClipLength(ms: Long) {
         if (ms == clipLenMs) return
         clipLenMs = ms
         prefs.edit().putLong("clipLen", ms).apply()
-        clips = clips.map { if (it.custom) it else withLength(it, ms, custom = false) }
     }
 
-    /** 클립 하나만 길이를 바꾼다. 기본 길이와 같게 되돌리면 다시 기본값을 따라간다. */
+    /** 순서 화면에서 클립 하나의 길이만 바꾼다. */
     fun setClipLengthFor(id: Long, ms: Long) {
-        clips = clips.map { if (it.id == id) withLength(it, ms, custom = ms != clipLenMs) else it }
-    }
-
-    private fun withLength(c: Clip, ms: Long, custom: Boolean): Clip {
-        val dur = videos.firstOrNull { it.uri == c.uri }?.durationMs ?: return c.copy(lengthMs = ms, custom = custom)
-        val r = clipRange(c.pointMs, dur, ms)
-        return c.copy(startMs = r.first, endMs = r.second, lengthMs = ms, custom = custom)
+        val c = clips.firstOrNull { it.id == id } ?: return
+        val video = videos.firstOrNull { it.uri == c.uri }
+        val r = if (video != null) clipRange(c.pointMs, video.durationMs, ms) else c.startMs to c.endMs
+        clips = clips.map { if (it.id == id) it.copy(startMs = r.first, endMs = r.second, lengthMs = ms) else it }
+        if (video != null) pointLengths = pointLengths + ((video.id to c.pointMs) to ms)
     }
 
     val totalMs: Long get() = clips.sumOf { it.endMs - it.startMs }
@@ -348,6 +358,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         cancelExport()
         videos = emptyList()
         points = emptyMap()
+        pointLengths = emptyMap()
         clips = emptyList()
         currentVideoIndex = 0
         stage = Stage.PICK

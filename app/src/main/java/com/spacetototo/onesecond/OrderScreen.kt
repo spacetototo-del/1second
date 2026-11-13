@@ -122,10 +122,7 @@ fun OrderScreen(vm: MainViewModel) {
                         Thumb(clip.uri, clip.startMs, Modifier.size(width = 56.dp, height = 100.dp).clickable { preview = clip })
                         Column(Modifier.weight(1f)) {
                             Text("${formatTime(clip.startMs)} ~ ${formatTime(clip.endMs)}")
-                            Text(
-                                "포인트 ${formatTime(clip.pointMs)}" + if (clip.custom) " · 직접 지정" else "",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
+                            Text("포인트 ${formatTime(clip.pointMs)}", style = MaterialTheme.typography.bodySmall)
                             LengthSelector(
                                 selectedMs = clip.lengthMs,
                                 onSelect = { vm.setClipLengthFor(clip.id, it) },

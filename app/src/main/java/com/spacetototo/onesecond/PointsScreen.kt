@@ -168,7 +168,7 @@ fun PointsScreen(vm: MainViewModel) {
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             )
             Text(
-                "포인트 앞뒤 ${formatSeconds(vm.clipLenMs / 2)}초씩, 총 ${formatSeconds(vm.clipLenMs)}초를 잘라요",
+                "지금부터 찍는 포인트는 앞뒤 ${formatSeconds(vm.clipLenMs / 2)}초씩, 총 ${formatSeconds(vm.clipLenMs)}초를 잘라요. 이미 찍은 포인트는 그대로예요.",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 4.dp),
             )
@@ -202,7 +202,7 @@ fun PointsScreen(vm: MainViewModel) {
                             pos = p
                             selected = p
                         },
-                        label = { Text(formatTime(p)) },
+                        label = { Text("${formatTime(p)} · ${formatSeconds(vm.lengthOfPoint(video.id, p))}초") },
                         trailingIcon = {
                             IconButton(
                                 onClick = {
