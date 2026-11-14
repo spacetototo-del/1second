@@ -48,6 +48,11 @@ import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import androidx.compose.ui.geometry.Size
+
+/** 미리보기 요청 (n 은 같은 구간을 다시 눌러도 다시 재생되게 하는 카운터) */
+private data class PreviewReq(val start: Long, val end: Long, val point: Long, val n: Int)
 
 @Composable
 fun PointsScreen(vm: MainViewModel) {
@@ -75,6 +80,22 @@ fun PointsScreen(vm: MainViewModel) {
     var isPlaying by remember { mutableStateOf(false) }
     // 위치를 옮길 포인트 (칩을 탭하면 선택된다)
     var selected by remember(video.id) { mutableStateOf<Long?>(null) }
+    var previewReq by remember(video.id) { mutableStateOf<PreviewReq?>(null) }
+
+    // 잘리는 구간만 재생하고 끝나면 멈춘 뒤, 포인트 위치로 돌아와서 계속 조절할 수 있게 한다
+    LaunchedEffect(previewReq) {
+        val req = previewReq ?: return@LaunchedEffect
+        player.seekTo(req.start)
+        player.play()
+        var waited = 0L
+        val limit = (req.end - req.start) + 3000L
+        while (isActive && player.currentPosition < req.end && waited < limit) {
+            delay(20)
+            waited += 20
+        }
+        player.pause()
+        player.seekTo(req.point)
+    }
 
     LaunchedEffect(video.id) {
         while (true) {
@@ -100,6 +121,10 @@ fun PointsScreen(vm: MainViewModel) {
     }
 
     val markerColor = MaterialTheme.colorScheme.tertiary
+
+    // 선택된 포인트와, 그 포인트가 실제로 잘리는 구간
+    val sel0 = selected?.takeIf { it in videoPoints }
+    val selRange = sel0?.let { clipRange(it, duration, vm.lengthOfPoint(video.id, it)) }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -130,6 +155,11 @@ fun PointsScreen(vm: MainViewModel) {
                 Modifier.fillMaxWidth().height(10.dp).drawBehind {
                     val pad = 12.dp.toPx()
                     val w = size.width - pad * 2
+                    selRange?.let { r ->
+                        val x1 = pad + w * r.first / duration.coerceAtLeast(1L)
+                        val x2 = pad + w * r.second / duration.coerceAtLeast(1L)
+                        drawRect(markerColor.copy(alpha = 0.35f), Offset(x1, 0f), Size(x2 - x1, size.height))
+                    }
                     videoPoints.forEach { p ->
                         val x = pad + w * p / duration.coerceAtLeast(1L)
                         drawLine(markerColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 3.dp.toPx())
@@ -180,13 +210,30 @@ fun PointsScreen(vm: MainViewModel) {
                 when (vm.addPoint(video.id, pos)) {
                     MainViewModel.AddResult.DUPLICATE ->
                         Toast.makeText(ctx, "이미 같은 지점에 포인트가 있어요", Toast.LENGTH_SHORT).show()
-                    MainViewModel.AddResult.OVERLAPPED ->
-                        Toast.makeText(ctx, "다른 포인트와 1초 안쪽으로 겹쳐요", Toast.LENGTH_SHORT).show()
-                    MainViewModel.AddResult.ADDED -> Unit
+                    MainViewModel.AddResult.OVERLAPPED -> {
+                        selected = pos
+                        Toast.makeText(ctx, "다른 포인트와 길이가 겹쳐요", Toast.LENGTH_SHORT).show()
+                    }
+                    // 찍자마자 선택해서, 바로 미리보기 버튼으로 잘리는 구간을 확인할 수 있게 한다
+                    MainViewModel.AddResult.ADDED -> selected = pos
                 }
             },
             modifier = Modifier.fillMaxWidth(),
         ) { Text("★ 이 지점을 포인트로 추가 (${formatTime(pos)})") }
+
+        if (selRange != null && sel0 != null) {
+            OutlinedButton(
+                onClick = {
+                    previewReq = PreviewReq(selRange.first, selRange.second, sel0, (previewReq?.n ?: 0) + 1)
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                Text(
+                    " 잘리는 구간 미리보기 ${formatTime(selRange.first)} ~ ${formatTime(selRange.second)} (${formatSeconds(selRange.second - selRange.first)}초)"
+                )
+            }
+        }
 
         if (videoPoints.isEmpty()) {
             Text("아직 포인트가 없어요. 영상을 움직여서 원하는 지점에 추가하세요.", style = MaterialTheme.typography.bodySmall)
