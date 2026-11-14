@@ -14,8 +14,8 @@ android {
         applicationId = "com.spacetototo.onesecond"
         minSdk = 29
         targetSdk = 34
-        versionCode = 9
-        versionName = "0.3.3"
+        versionCode = 10
+        versionName = "0.3.4"
     }
 
     // 모든 버전을 같은 키로 서명해야 덮어쓰기 설치가 된다.
